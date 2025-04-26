@@ -1,0 +1,81 @@
+import streamlit as ui
+import pandas as pxl
+import numpy as np
+import folium as f
+from streamlit_folium import st_folium as folio_render
+import random as rd
+from datetime import datetime as dt, timedelta as td
+import plotly.express as visx
+
+ui.set_page_config(page_title="FleetIQ | Cab Route Monitor", layout="wide")
+
+ui.title("FleetIQ - Route Intelligence for One-Way Rides")
+ui.caption("NCR | Cab Booking Demand & Return Path Optimizer")
+
+@ui.cache_data
+def pull_data(sample=400):
+    zone = ['Delhi', 'Noida', 'Gurgaon', 'Faridabad', 'Ghaziabad']
+    lat_set = {"Delhi": 28.61, "Noida": 28.54, "Gurgaon": 28.46, "Faridabad": 28.41, "Ghaziabad": 28.67}
+    lon_set = {"Delhi": 77.23, "Noida": 77.39, "Gurgaon": 77.03, "Faridabad": 77.31, "Ghaziabad": 77.45}
+    logs = []
+    for _ in range(sample):
+        a = rd.choice(zone)
+        b = rd.choice([x for x in zone if x != a])
+        t = dt.now() - td(hours=rd.randint(0, 60))
+        d = rd.randint(1, 6)
+        lt = lat_set[a] + rd.uniform(-0.009, 0.009)
+        ln = lon_set[a] + rd.uniform(-0.009, 0.009)
+        logs.append([a, b, t, d, lt, ln])
+    return pxl.DataFrame(logs, columns=["Src", "Dst", "Time", "Load", "Lat", "Lon"])
+
+data = pull_data()
+
+ui.markdown("---")
+
+# Create the map
+mapx = f.Map(location=[28.61, 77.23], zoom_start=10)
+f.TileLayer('CartoDB positron').add_to(mapx)
+
+# Add markers to the map
+for _, row in data.iterrows():
+    f.CircleMarker(
+        location=[row["Lat"], row["Lon"]],
+        radius=row["Load"] * 1.8,
+        popup=f"{row['Src']} → {row['Dst']}",
+        color="#d62728",
+        fill=True,
+        fill_opacity=0.45
+    ).add_to(mapx)
+
+# Render the map with minimal container spacing
+with ui.container():
+    folio_render(mapx, width=1100, height=380, returned_objects=[])
+
+# CSS to remove extra space between components
+ui.markdown(
+    """
+    <style>
+    .css-18e3th9 {margin-bottom: 0rem;}  /* Reduce margin between components */
+    .css-1v3fvcr {margin-top: -10px;}   /* Adjust margin top */
+    .css-ffhzg2 {padding-top: 0rem;}     /* Remove padding */
+    </style>
+    """, unsafe_allow_html=True)
+
+# Immediately below the map
+ui.markdown("### 📈 Return Route Patterns", unsafe_allow_html=True)
+
+# Group data and plot the chart
+summary = data.groupby("Dst").size().reset_index(name='Hits')
+summary = summary.sort_values(by="Hits", ascending=False)
+
+chart = visx.bar(summary, x="Dst", y="Hits", color="Dst", text_auto=True, title="Backhaul Demand per Destination")
+ui.plotly_chart(chart, use_container_width=True)
+
+# Display load estimator and region table below
+ui.markdown("### ⚙️ Load Spike Estimator", unsafe_allow_html=True)
+opt = ui.selectbox("Choose a Source Region", data["Src"].unique())
+guess = rd.randint(4, 11)
+ui.success(f"⚠️ Surge Expected in **{opt}** → est. {guess} rides in 6 hours")
+
+ui.markdown("### 🗃️ Regional Load Table", unsafe_allow_html=True)
+ui.dataframe(summary, use_container_width=True)
